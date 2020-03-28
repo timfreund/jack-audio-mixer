@@ -11,8 +11,7 @@ struct Channel {
 
 struct Mixer {
     inputs: Vec<Channel>,
-    // outputs: Vec<jack::Port<jack::AudioOut>>,
-    output: jack::Port<jack::AudioOut>,
+    outputs: Vec<jack::Port<jack::AudioOut>>,
 }
 
 fn main() {
@@ -20,7 +19,7 @@ fn main() {
 
     let mut mixer = Mixer {
         inputs: Vec::new(),
-        output: jack_client.register_port("out", jack::AudioOut::default()).unwrap(),
+        outputs: Vec::new(),
     };
 
     for i in 0..8 {
@@ -33,29 +32,32 @@ fn main() {
         });
     }    
 
-    // for i in 0..2 {
-    //     mixer.outputs.push(jack_client.register_port(&format!("out_{}", i), jack::AudioOut::default()).unwrap());
-    // }    
+    for i in 0..2 {
+        mixer.outputs.push(jack_client.register_port(&format!("out_{}", i), jack::AudioOut::default()).unwrap());
+    }
 
     let jack_callback = jack::ClosureProcessHandler::new(
         move |_: &jack::Client, ps: &jack::ProcessScope| -> jack::Control {
-            let output = mixer.output.as_mut_slice(ps);
+            // &mut mixer.output works, but I need to understand why
+            for output in &mut mixer.outputs {
+                let os = output.as_mut_slice(ps);
 
-            // zero out the slice before adding new stuff... seems that it's
-            // the same memory reused between frames
-            for ov in output.iter_mut() {
-                *ov = 0.0;
-            }
-            for c in &mixer.inputs {
-                if !c.mute {
-                    let islice = c.input.as_slice(ps);
-                    // I wrestled with this a lot and it came down to
-                    // iter() != iter_mut().  Once I got a mutable
-                    // iterator everything snapped into place
-                    let output_iter = output.iter_mut();
-                    for (ov, iv) in output_iter.zip(islice){
-                        // *ov = *ov + (c.level * iv);
-                        *ov = *ov + (c.level * iv);
+                // zero out the slice before adding new stuff... seems that it's
+                // the same memory reused between frames
+                for ov in os.iter_mut() {
+                    *ov = 0.0;
+                }
+                for c in &mixer.inputs {
+                    if !c.mute {
+                        let islice = c.input.as_slice(ps);
+                        // I wrestled with this a lot and it came down to
+                        // iter() != iter_mut().  Once I got a mutable
+                        // iterator everything snapped into place
+                        let output_iter = os.iter_mut();
+                        for (ov, iv) in output_iter.zip(islice){
+                            // *ov = *ov + (c.level * iv);
+                            *ov = *ov + (c.level * iv);
+                        }
                     }
                 }
             }
