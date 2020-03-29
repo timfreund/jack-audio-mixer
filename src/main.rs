@@ -1,6 +1,8 @@
-extern crate rosc;
+extern crate crossbeam_channel;
 extern crate jack;
+extern crate rosc;
 
+use crossbeam_channel::unbounded;
 use rosc::{OscPacket, OscType};
 use std::net::UdpSocket;
 
@@ -39,8 +41,21 @@ fn main() {
         mixer.outputs.push(jack_client.register_port(&format!("out_{}", i), jack::AudioOut::default()).unwrap());
     }
 
+    let (tx, rx) = unbounded();
+
     let jack_callback = jack::ClosureProcessHandler::new(
         move |_: &jack::Client, ps: &jack::ProcessScope| -> jack::Control {
+            while let Ok(msg) = rx.try_recv() {
+                println!("from OSC socket {}", msg);
+                // let msg_iter = msg.to_string().rsplit(' ');
+                let msg_str = String::from(msg);
+                let mut msg_iter = msg_str.split(' ');
+                let chan = msg_iter.next().unwrap().parse::<i32>().unwrap();
+                let level = msg_iter.next().unwrap().parse::<f32>().unwrap();
+                println!("from OSC socket: set {} to {}", chan, level);
+                mixer.inputs[chan as usize].level = level;
+            }
+
             // &mut mixer.output works, but I need to understand why
             for output in &mut mixer.outputs {
                 let os = output.as_mut_slice(ps);
@@ -86,7 +101,8 @@ fn main() {
                             match msg.args[0] {
                                 OscType::Float(f) => {
                                     println!("\t\tset {} to {}", chan, f);
-                                    // let index = chan - 1;
+                                    let chan_index = chan - 1;
+                                    tx.send(format!("{} {}", chan_index, f)).unwrap();
                                     // // do I need to do some message passing like in the sine example here?
                                     // let mut channel = &mixer.inputs[index as usize];
                                     // channel.level = f;
