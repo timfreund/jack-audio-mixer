@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 jack = "0.6"
+rosc = "0.3.0"

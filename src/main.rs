@@ -1,5 +1,8 @@
+extern crate rosc;
 extern crate jack;
-use std::io;
+
+use rosc::{OscPacket, OscType};
+use std::net::UdpSocket;
 
 struct Channel {
     name: String,
@@ -67,9 +70,50 @@ fn main() {
     
     let active_client = jack_client.activate_async((), jack_callback).unwrap();
 
-    println!("Press any key to quit");
-    let mut quit = String::new();
-    io::stdin().read_line(&mut quit).ok();
+    let oscsock = UdpSocket::bind("0.0.0.0:10888").unwrap();
+    let mut oscbuf = [0u8; rosc::decoder::MTU];
+
+    loop {
+        match oscsock.recv_from(&mut oscbuf){
+            Ok((size, addr)) => {
+                println!("{} {}", size, addr);
+                let packet = rosc::decoder::decode(&oscbuf[..size]).unwrap();
+                match packet {
+                    OscPacket::Message(msg) => {
+                        println!("\t{} {:?}", msg.addr, msg.args);
+                        if msg.addr.contains("input/level") {
+                            let chan = msg.addr.rsplit('/').next().unwrap().parse::<i32>().unwrap();
+                            match msg.args[0] {
+                                OscType::Float(f) => {
+                                    println!("\t\tset {} to {}", chan, f);
+                                    // let index = chan - 1;
+                                    // // do I need to do some message passing like in the sine example here?
+                                    // let mut channel = &mixer.inputs[index as usize];
+                                    // channel.level = f;
+                                }
+                                _ => {
+                                    // we only know how to handle floats
+                                }
+                            }
+                            // let val = msg.args[0];
+                            // let val = msg.args.iter().next().unwrap().float().unwrap();
+                        }
+                    }
+                    OscPacket::Bundle(bundle) => {
+                        println!("\t{:?}", bundle);
+                    }
+                }
+            }
+            Err(e) => {
+                println!("Error (socket): {}", e);
+                break;
+            }
+        }
+    }
+
+    // println!("Press any key to quit");
+    // let mut quit = String::new();
+    // io::stdin().read_line(&mut quit).ok();
 
     active_client.deactivate().unwrap();
 }
