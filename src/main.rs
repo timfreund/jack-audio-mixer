@@ -51,9 +51,18 @@ fn main() {
                 let msg_str = String::from(msg);
                 let mut msg_iter = msg_str.split(' ');
                 let chan = msg_iter.next().unwrap().parse::<i32>().unwrap();
-                let level = msg_iter.next().unwrap().parse::<f32>().unwrap();
-                println!("from OSC socket: set {} to {}", chan, level);
-                mixer.inputs[chan as usize].level = level;
+                let attr = msg_iter.next().unwrap();
+                let value = msg_iter.next().unwrap().parse::<f32>().unwrap();
+                println!("from OSC socket: set {}.{} to {}", chan, attr, value);
+                if attr == "level" {
+                    mixer.inputs[chan as usize].level = value;
+                } else if attr == "mute" {
+                    if value == 1.0 {
+                        mixer.inputs[chan as usize].mute = true;
+                    } else if value == 0.0 {
+                        mixer.inputs[chan as usize].mute = false;
+                    }
+                }
             }
 
             // &mut mixer.output works, but I need to understand why
@@ -96,23 +105,27 @@ fn main() {
                 match packet {
                     OscPacket::Message(msg) => {
                         println!("\t{} {:?}", msg.addr, msg.args);
-                        if msg.addr.contains("input/level") {
-                            let chan = msg.addr.rsplit('/').next().unwrap().parse::<i32>().unwrap();
-                            match msg.args[0] {
-                                OscType::Float(f) => {
-                                    println!("\t\tset {} to {}", chan, f);
-                                    let chan_index = chan - 1;
-                                    tx.send(format!("{} {}", chan_index, f)).unwrap();
-                                    // // do I need to do some message passing like in the sine example here?
-                                    // let mut channel = &mixer.inputs[index as usize];
-                                    // channel.level = f;
-                                }
-                                _ => {
-                                    // we only know how to handle floats
+                        if msg.addr.contains("/input/"){
+                            let target = msg.addr.replace("/input/", "");
+                            let components: Vec<&str> = target.splitn(2, "/").collect();
+                            let chan = components[0].parse::<i32>().unwrap();
+                            let attr = components[1];
+                            println!("\t{} {}", chan, attr);
+
+                            if attr == "level" || attr == "mute" {
+                                match msg.args[0] {
+                                    OscType::Float(f) => {
+                                        let chan_index = chan - 1;
+                                        tx.send(format!("{} {} {}", chan_index, attr, f)).unwrap();
+                                        // // do I need to do some message passing like in the sine example here?
+                                        // let mut channel = &mixer.inputs[index as usize];
+                                        // channel.level = f;
+                                    }
+                                    _ => {
+                                        // we only know how to handle floats
+                                    }
                                 }
                             }
-                            // let val = msg.args[0];
-                            // let val = msg.args.iter().next().unwrap().float().unwrap();
                         }
                     }
                     OscPacket::Bundle(bundle) => {
