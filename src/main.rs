@@ -1,7 +1,9 @@
+extern crate clap;
 extern crate crossbeam_channel;
 extern crate jack;
 extern crate rosc;
 
+use clap::{Arg, App};
 use crossbeam_channel::unbounded;
 use rosc::{OscPacket, OscType};
 use std::net::UdpSocket;
@@ -20,6 +22,62 @@ struct Mixer {
 }
 
 fn main() {
+    let args = App::new("jack-audio-mixer")
+        .version("0.1")
+        .author("Tim Freund <tim@freunds.net>")
+        .about("Mix multiple audio inputs")
+        .arg(Arg::with_name("config")
+             .short("c")
+             .long("config")
+             .value_name("FILE")
+             .help("Channel configuration file")
+             .takes_value(true))
+        .arg(Arg::with_name("inputs")
+             .short("i")
+             .long("inputs")
+             .value_name("INTEGER")
+             .help("Number of input channels")
+             .default_value("8")
+             .takes_value(true))
+        .arg(Arg::with_name("outputs")
+             .short("o")
+             .long("outputs")
+             .value_name("INTEGER")
+             .help("Number of output channels")
+             .default_value("2")
+             .takes_value(true))
+        .get_matches();
+
+    
+    match args.value_of("config"){
+        None => println!("No configuration file provided"),
+        Some(config_file_path) => {
+            println!("Should load configuration file {}", config_file_path);
+        }
+    }
+
+    let mut output_channel_count = 2;
+    match args.value_of("outputs") {
+        Some(occ) => {
+            output_channel_count = occ.parse::<i32>().unwrap();
+        },
+        _ => {
+
+        }
+    }
+
+    // TODO: does this need to be mutable or is there a
+    // better pattern for this?
+    let mut input_channel_count = 2;
+    match args.value_of("inputs") {
+        Some(icc) => {
+            input_channel_count = icc.parse::<i32>().unwrap();
+        },
+        _ => {
+
+        }
+    }
+    
     let(jack_client, _status) = jack::Client::new("jam", jack::ClientOptions::NO_START_SERVER).unwrap();
 
     let mut mixer = Mixer {
@@ -27,7 +85,7 @@ fn main() {
         outputs: Vec::new(),
     };
 
-    for i in 0..8 {
+    for i in 0..output_channel_count {
         mixer.inputs.push(Channel {
             name: i.to_string(),
             level: 0.1,
@@ -37,7 +95,7 @@ fn main() {
         });
     }    
 
-    for i in 0..2 {
+    for i in 0..input_channel_count {
         mixer.outputs.push(jack_client.register_port(&format!("out_{}", i), jack::AudioOut::default()).unwrap());
     }
 
